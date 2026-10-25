@@ -1,1163 +1,578 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>バレーボール総当たり対戦表 & リアルタイム進行管理</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- FontAwesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
-    body {
-      font-family: 'Plus Jakarta Sans', 'Noto Sans JP', sans-serif;
-    }
-    .match-card {
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .match-card:hover {
-      transform: translateY(-2px);
-    }
-    ::-webkit-scrollbar {
-      height: 6px;
-      width: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 9999px;
-    }
-
-    @keyframes shake {
-      0%, 100% { transform: translateX(0); }
-      20%, 60% { transform: translateX(-6px); }
-      40%, 80% { transform: translateX(6px); }
-    }
-    .animate-shake {
-      animation: shake 0.3s ease-in-out;
-    }
-  </style>
-
-  <!-- Firebase Integration -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'vball-tournament-app';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-      apiKey: "demo-key",
-      authDomain: "demo-app.firebaseapp.com",
-      projectId: "demo-app",
-      storageBucket: "demo-app.appspot.com",
-      messagingSenderId: "123456789",
-      appId: "1:123456789:web:123456789"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-
-    window.vballFirebase = {
-      db,
-      auth,
-      appId,
-      doc,
-      setDoc,
-      onSnapshot,
-      signInAnonymously,
-      signInWithCustomToken,
-      currentUser: null,
-      isFirebaseReady: false
-    };
-
-    async function initAuth() {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
-          window.vballFirebase.currentUser = userCredential.user;
-        } else {
-          const userCredential = await signInAnonymously(auth);
-          window.vballFirebase.currentUser = userCredential.user;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>バレーボール対戦表</title>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        .score-input::-webkit-inner-spin-button,
+        .score-input::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
-        window.vballFirebase.isFirebaseReady = true;
-        if (window.onFirebaseInitReady) {
-          window.onFirebaseInitReady();
+        .score-input {
+            -moz-appearance: textfield;
         }
-      } catch (err) {
-        console.error("Firebase Auth Error:", err);
-        window.vballFirebase.isFirebaseReady = true;
-        if (window.onFirebaseInitReady) {
-          window.onFirebaseInitReady();
-        }
-      }
-    }
-
-    initAuth();
-  </script>
+    </style>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen pb-12">
 
-  <!-- Top Status Bar (Role & Sync) -->
-  <div id="mode-bar" class="bg-slate-900 text-white text-xs px-4 py-2 flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 sticky top-0 z-50">
-    <div class="flex items-center space-x-2">
-      <span id="role-badge" class="bg-slate-700 text-slate-300 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
-        <i class="fa-solid fa-eye"></i> 閲覧モード
-      </span>
-      <span class="text-slate-400 hidden sm:inline">｜ 大会ID: <strong id="tournament-id-display" class="text-indigo-300 font-mono">---</strong></span>
-    </div>
-
-    <div class="flex items-center space-x-2">
-      <span id="sync-status" class="text-emerald-400 text-[11px] font-semibold flex items-center gap-1 mr-2">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> リアルタイム同期中
-      </span>
-
-      <button onclick="copyShareLink()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1 rounded-lg transition flex items-center gap-1 shadow-sm">
-        <i class="fa-solid fa-share-nodes"></i> 共有リンク取得
-      </button>
-
-      <button id="auth-btn" onclick="toggleAuthModal()" class="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-bold px-3 py-1 rounded-lg transition flex items-center gap-1">
-        <i class="fa-solid fa-key"></i> <span id="auth-btn-text">管理者ログイン</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Header -->
-  <header class="bg-gradient-to-r from-indigo-900 via-slate-900 to-blue-900 text-white shadow-md">
-    <div class="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center gap-3">
-      <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 bg-amber-400 text-slate-950 rounded-xl flex items-center justify-center font-black text-xl shadow-md">
-          <i class="fa-solid fa-volleyball"></i>
-        </div>
-        <div>
-          <h1 class="text-lg sm:text-xl font-extrabold tracking-tight leading-tight">バレーボール総当たり対戦表 & 管理</h1>
-          <p class="text-[11px] text-indigo-200 font-medium">1セット勝負（デュース対応）・リアルタイム自動同期</p>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <button onclick="scrollToSection('standings-section')" class="bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black px-3.5 py-2 rounded-xl transition shadow-md flex items-center gap-1.5">
-          <i class="fa-solid fa-trophy text-slate-900"></i>
-          <span>順位表を見る</span>
-        </button>
-        <button id="admin-reset-btn" onclick="openResetModal()" class="hidden bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition shadow flex items-center gap-1">
-          <i class="fa-solid fa-rotate-left"></i>
-          <span>リセット</span>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Toast Notification -->
-  <div id="toast" class="fixed top-16 right-4 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold transition-all transform translate-y-[-100px] opacity-0 pointer-events-none">
-    <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
-    <span id="toast-message">メッセージ</span>
-  </div>
-
-  <!-- Main Content -->
-  <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex-grow space-y-6 w-full">
-
-    <!-- 1. Config & Rules Section -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6 relative">
-      <div id="config-viewer-overlay-badge" class="hidden absolute top-4 right-4 bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-lg text-xs font-bold items-center gap-1">
-        <i class="fa-solid fa-lock"></i> 閲覧モード（ロック中）
-      </div>
-
-      <div class="flex items-center gap-2 border-b border-slate-100 pb-3 mb-5">
-        <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
-          <i class="fa-solid fa-sliders"></i>
-        </div>
-        <h2 class="text-base sm:text-lg font-extrabold text-slate-800">大会・コート設定</h2>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        <!-- Team Count Slider -->
-        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60">
-          <div class="flex justify-between items-center mb-2">
-            <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5" for="team-count-slider">
-              <i class="fa-solid fa-people-group text-indigo-600"></i> 参加チーム数 (2〜10)
-            </label>
-            <span id="team-count-display" class="text-sm font-black text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-md">6チーム</span>
-          </div>
-          <input type="range" id="team-count-slider" min="2" max="10" value="6" step="1"
-                 oninput="handleTeamCountSlider(this.value)"
-                 class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed">
-          <div class="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
-            <span>2</span><span>4</span><span>6</span><span>8</span><span>10</span>
-          </div>
-        </div>
-
-        <!-- Court Count Select -->
-        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200/60">
-          <label class="block text-xs font-bold text-slate-700 mb-2" for="court-count-select">
-            <i class="fa-solid fa-border-all text-indigo-600 mr-1"></i> 使用コート数 (1〜4)
-          </label>
-          <select id="court-count-select" onchange="updateSettingsFromUI()" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-sm disabled:opacity-50 disabled:bg-slate-100">
-            <option value="1">1 コート</option>
-            <option value="2" selected>2 コート</option>
-            <option value="3">3 コート</option>
-            <option value="4">4 コート</option>
-          </select>
-          <p class="text-[10px] text-slate-400 mt-1.5">※各試合枠に並列してコートが割り当てられます</p>
-        </div>
-
-        <!-- Referee Toggle Switch (管理時のみ表示) -->
-        <div id="referee-setting-card" class="hidden bg-slate-50 p-4 rounded-xl border border-indigo-200/80 flex flex-col justify-between">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-              <i class="fa-solid fa-user-shield text-indigo-600"></i> あまるチームから審判指定
-            </label>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="referee-toggle" checked onchange="updateSettingsFromUI()" class="sr-only peer">
-              <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-            </label>
-          </div>
-          <p class="text-[11px] text-slate-500 mt-2 bg-white p-2 rounded-lg border border-slate-200/80">
-            <i class="fa-solid fa-circle-info text-indigo-500 mr-1"></i>
-            管理者限定：ONにすると試合をしていない「あまりチーム」から自動で審判を指定します。
-          </p>
-        </div>
-      </div>
-
-      <!-- Team Name Editing Grid -->
-      <div class="mt-5 pt-4 border-t border-slate-100">
-        <label class="text-xs font-extrabold text-slate-700 flex items-center gap-1.5 mb-2">
-          <i class="fa-solid fa-pen-to-square text-indigo-600"></i> チーム名変更
-        </label>
-        <div id="team-names-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
-          <!-- Dynamically generated -->
-        </div>
-      </div>
-    </section>
-
-    <!-- 2. Match Schedule & Score Inputs Section -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6">
-      <div class="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 mb-5 gap-2">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
-            <i class="fa-solid fa-calendar-check"></i>
-          </div>
-          <div>
-            <h2 class="text-base sm:text-lg font-extrabold text-slate-800">試合進行スケジュール & 得点入力</h2>
-            <p class="text-xs text-slate-400">「第1試合」「第2試合」ごとにコート数分の対戦・自動審判が割り当てられます</p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3 text-xs font-semibold">
-          <div class="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 完了
-          </div>
-          <div class="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-            <span class="w-2 h-2 rounded-full bg-amber-400"></span> 未完
-          </div>
-        </div>
-      </div>
-
-      <div id="schedule-container" class="space-y-6">
-        <!-- Dynamically rendered match rounds -->
-      </div>
-    </section>
-
-    <!-- 3. Crosstable Matrix (星取表) -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6">
-      <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center font-bold">
-            <i class="fa-solid fa-table-cells"></i>
-          </div>
-          <h2 class="text-base sm:text-lg font-extrabold text-slate-800">星取表（対戦クロス表）</h2>
-        </div>
-      </div>
-
-      <div class="overflow-x-auto">
-        <table id="crosstable" class="w-full text-xs text-center border-collapse">
-          <!-- Dynamically rendered matrix -->
-        </table>
-      </div>
-    </section>
-
-    <!-- 4. Standings Section (CRITICAL: Placed at the VERY BOTTOM) -->
-    <section id="standings-section" class="bg-slate-900 text-white rounded-2xl shadow-xl border border-slate-800 p-5 sm:p-7">
-      <div class="flex flex-wrap items-center justify-between border-b border-slate-800 pb-4 mb-5 gap-3">
-        <div>
-          <div class="flex items-center gap-2">
-            <div class="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-lg shadow-lg shadow-amber-400/20">
-              <i class="fa-solid fa-trophy"></i>
-            </div>
+    <!-- Header -->
+    <header class="bg-blue-600 text-white shadow-md">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
             <div>
-              <h2 class="text-xl sm:text-2xl font-black tracking-tight text-white">大会順位表</h2>
-              <p class="text-xs text-slate-400">リアルタイム勝ち数・得失点自動集計</p>
+                <h1 class="text-2xl font-bold flex items-center gap-2">
+                    <i data-lucide="trophy" class="w-7 h-7 text-yellow-300"></i>
+                    バレーボール対戦表
+                </h1>
+                <p class="text-xs text-blue-100 mt-1">大会用・リアルタイム管理システム</p>
             </div>
-          </div>
+            
+            <div class="flex items-center gap-2">
+                <button id="share-btn" class="bg-blue-700 hover:bg-blue-800 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-1 transition shadow-sm">
+                    <i data-lucide="share-2" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">共有</span>
+                </button>
+                
+                <button id="admin-toggle-btn" class="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-2 rounded-lg flex items-center gap-1 transition">
+                    <i id="admin-icon" data-lucide="lock" class="w-4 h-4"></i>
+                    <span id="admin-label">閲覧モード</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- Banner -->
+        <div id="mode-banner" class="bg-slate-200 border-l-4 border-slate-500 text-slate-700 p-3 rounded text-sm flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i data-lucide="eye" class="w-5 h-5 text-slate-600"></i>
+                <span>現在は<strong>閲覧専用モード</strong>です。スコア入力や設定変更は行えません。</span>
+            </div>
         </div>
 
-        <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3 text-[11px] text-slate-300 space-y-0.5">
-          <div class="font-bold text-amber-400 mb-1 flex items-center gap-1">
-            <i class="fa-solid fa-list-ol"></i> 順位判定ルール（優先順）
-          </div>
-          <div>1. 勝ち数 &rarr; 2. 得失点差 &rarr; 3. 総得点 &rarr; 4. 総失点（少ない順）</div>
+        <!-- Controls -->
+        <div id="controls-section" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 opacity-60 pointer-events-none transition-all">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2 border-b pb-2">
+                <i data-lucide="settings" class="w-5 h-5 text-blue-600"></i> 大会設定
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">チーム数 (2〜10)</label>
+                    <select id="team-count" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="2">2チーム</option>
+                        <option value="3">3チーム</option>
+                        <option value="4">4チーム</option>
+                        <option value="5">5チーム</option>
+                        <option value="6" selected>6チーム</option>
+                        <option value="7">7チーム</option>
+                        <option value="8">8チーム</option>
+                        <option value="9">9チーム</option>
+                        <option value="10">10チーム</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">使用コート数 (1〜4)</label>
+                    <select id="court-count" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="1">1コート</option>
+                        <option value="2" selected>2コート</option>
+                        <option value="3">3コート</option>
+                        <option value="4">4コート</option>
+                    </select>
+                </div>
+
+                <div id="referee-setting-card" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">審判設定</label>
+                    <label class="inline-flex items-center cursor-pointer mt-1">
+                        <input type="checkbox" id="referee-toggle" class="sr-only peer" checked>
+                        <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        <span class="ms-3 text-sm font-medium text-slate-700">空きチームから審判を自動割り当て</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-slate-100">
+                <label class="block text-xs font-semibold text-slate-600 mb-2">チーム名設定</label>
+                <div id="team-names-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
+            </div>
+
+            <div class="mt-4 flex justify-end">
+                <button id="reset-btn" class="bg-red-500 hover:bg-red-600 text-white text-xs px-4 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i> スコアリセット
+                </button>
+            </div>
         </div>
-      </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse min-w-[600px]">
-          <thead>
-            <tr class="border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
-              <th class="py-3 px-3 text-center w-14">順位</th>
-              <th class="py-3 px-4">チーム名</th>
-              <th class="py-3 px-2 text-center">試合数</th>
-              <th class="py-3 px-2 text-center text-emerald-400">勝</th>
-              <th class="py-3 px-2 text-center text-rose-400">負</th>
-              <th class="py-3 px-2 text-center">総得点</th>
-              <th class="py-3 px-2 text-center">総失点</th>
-              <th class="py-3 px-3 text-center font-extrabold text-amber-400">得失点差</th>
-            </tr>
-          </thead>
-          <tbody id="standings-body" class="divide-y divide-slate-800/70 text-sm">
-            <!-- Dynamically generated standings -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- Admin Passcode Modal -->
-  <div id="auth-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div id="auth-modal-card" class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 border border-slate-100 transition-all">
-      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-        <h3 class="font-extrabold text-slate-800 text-base flex items-center gap-2">
-          <i class="fa-solid fa-user-shield text-indigo-600"></i> 管理者用認証
-        </h3>
-        <button onclick="closeAuthModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
-      </div>
-      <p class="text-xs text-slate-500">管理者パスコードを入力してスコア・設定変更のロックを解除します。</p>
-      
-      <div>
-        <label class="block text-xs font-bold text-slate-700 mb-1" for="admin-passcode-input">管理者パスコード</label>
-        <div class="relative">
-          <input type="password" id="admin-passcode-input" placeholder="パスコードを入力" 
-                 onkeydown="if(event.key==='Enter') submitAdminPasscode()"
-                 class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-3 pr-10 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
-          <button type="button" onclick="togglePasscodeVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
-            <i id="passcode-eye-icon" class="fa-solid fa-eye"></i>
-          </button>
+        <!-- Matches Section -->
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2 border-b pb-2">
+                <i data-lucide="calendar" class="w-5 h-5 text-blue-600"></i> 対戦表・試合進行
+            </h2>
+            <div id="matches-container" class="space-y-6"></div>
         </div>
-        <p id="auth-error-msg" class="text-xs text-rose-600 font-bold mt-1.5 hidden flex items-center gap-1">
-          <i class="fa-solid fa-circle-exclamation"></i> <span>パスコードが誤っています</span>
-        </p>
-      </div>
 
-      <div class="flex gap-2 pt-2">
-        <button onclick="closeAuthModal()" class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition">キャンセル</button>
-        <button onclick="submitAdminPasscode()" class="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-indigo-600/30">ログイン</button>
-      </div>
+        <!-- Ranking Section -->
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2 border-b pb-2">
+                <i data-lucide="award" class="w-5 h-5 text-yellow-500"></i> 順位表（リアルタイム集計）
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left text-slate-600">
+                    <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                        <tr>
+                            <th class="px-4 py-3 text-center w-16">順位</th>
+                            <th class="px-4 py-3">チーム名</th>
+                            <th class="px-4 py-3 text-center">試合数</th>
+                            <th class="px-4 py-3 text-center">勝ち</th>
+                            <th class="px-4 py-3 text-center">負け</th>
+                            <th class="px-4 py-3 text-center">得点</th>
+                            <th class="px-4 py-3 text-center">失点</th>
+                            <th class="px-4 py-3 text-center">得失点差</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ranking-tbody" class="divide-y divide-slate-200"></tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
-  </div>
 
-  <!-- Reset Confirmation Modal -->
-  <div id="reset-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center space-y-4 border border-slate-100">
-      <div class="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-      </div>
-      <div>
-        <h3 class="text-base font-extrabold text-slate-800">全データをリセットしますか？</h3>
-        <p class="text-xs text-slate-500 mt-1">入力したスコアおよび設定が初期状態に戻ります。</p>
-      </div>
-      <div class="flex gap-2 pt-2">
-        <button onclick="closeResetModal()" class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition">キャンセル</button>
-        <button onclick="confirmReset()" class="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-rose-600/30">リセット実行</button>
-      </div>
+    <!-- Login Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="text-md font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="shield-lock" class="w-5 h-5 text-blue-600"></i> 管理者認証
+                </h3>
+                <button id="close-modal-btn" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-600">管理モードに入るためのパスコードを入力してください。</p>
+            <div>
+                <div class="relative">
+                    <input type="password" id="admin-passcode" placeholder="パスコード" class="w-full border border-slate-300 rounded-lg p-2.5 text-sm pr-10 focus:ring-blue-500 focus:border-blue-500">
+                    <button type="button" id="toggle-passcode-visibility" class="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600">
+                        <i id="passcode-eye-icon" data-lucide="eye" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <p id="login-error" class="text-xs text-red-500 mt-1 hidden">パスコードが正しくありません。</p>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button id="cancel-login-btn" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg">キャンセル</button>
+                <button id="submit-login-btn" class="px-4 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg">ログイン</button>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
-    バレーボール総当たり戦対戦表＆管理システム &copy; 1セットマッチ・デュース対応
-  </footer>
-
-  <script>
-    // System State
-    let isAdmin = false;
-    const ADMIN_PASSCODE = "0511";
-
-    let tournamentId = "default-tournament";
-    let isRemoteUpdate = false;
-
-    let config = {
-      teamCount: 6,
-      courtCount: 2,
-      hasReferee: true,
-      teams: [
-        { id: 1, name: "チーム1" },
-        { id: 2, name: "チーム2" },
-        { id: 3, name: "チーム3" },
-        { id: 4, name: "チーム4" },
-        { id: 5, name: "チーム5" },
-        { id: 6, name: "チーム6" }
-      ]
-    };
-
-    let matches = [];
-
-    window.onload = function() {
-      setupTournamentId();
-
-      if (window.vballFirebase && window.vballFirebase.isFirebaseReady) {
-        initFirestoreSync();
-      } else {
-        window.onFirebaseInitReady = () => {
-          initFirestoreSync();
+    <script>
+        // 🛠️ Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZxcKKCxPi4FMzy7P20mdljP4BF_s8-po",
+            authDomain: "volleyball-b2c69.firebaseapp.com",
+            projectId: "volleyball-b2c69",
+            storageBucket: "volleyball-b2c69.firebasestorage.app",
+            messagingSenderId: "929403303920",
+            appId: "1:929403303920:web:a55aca4b7fcd507e7b0f35"
         };
-      }
 
-      updateRoleUI();
-      renderTeamInputs();
-      renderSchedule();
-      renderCrossTable();
-      updateStandings();
-    };
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
 
-    function setupTournamentId() {
-      let hash = window.location.hash.replace('#', '').trim();
-      if (!hash) {
-        hash = 'vball-' + Math.random().toString(36).substring(2, 8);
-        window.location.hash = hash;
-      }
-      tournamentId = hash;
-      document.getElementById('tournament-id-display').innerText = tournamentId;
-    }
+        let state = {
+            isAdmin: false,
+            teamCount: 6,
+            courtCount: 2,
+            useReferee: true,
+            teamNames: ["チーム1", "チーム2", "チーム3", "チーム4", "チーム5", "チーム6"],
+            scores: {}
+        };
 
-    // Firestore Integration
-    function initFirestoreSync() {
-      const fb = window.vballFirebase;
-      if (!fb || !fb.db) return;
+        const ADMIN_PASSCODE = "0511";
+        const docRef = db.collection('tournaments').doc('default_tournament');
 
-      const appId = fb.appId;
-      const docRef = fb.doc(fb.db, 'artifacts', appId, 'public', 'data', 'tournaments', tournamentId);
+        document.addEventListener("DOMContentLoaded", () => {
+            initUI();
+            listenToRealtimeData();
+            lucide.createIcons();
+        });
 
-      fb.onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data && data.config && data.matches) {
-            isRemoteUpdate = true;
-            config = data.config;
-            matches = data.matches;
-
-            syncUIWithConfig();
-            renderTeamInputs();
-            renderSchedule();
-            renderCrossTable();
-            updateStandings();
-
-            isRemoteUpdate = false;
-            showSyncStatus('同期完了');
-          }
-        } else {
-          if (isAdmin) {
-            pushToFirestore();
-          }
+        function listenToRealtimeData() {
+            docRef.onSnapshot((doc) => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    state.teamCount = data.teamCount || 6;
+                    state.courtCount = data.courtCount || 2;
+                    state.useReferee = data.useReferee !== undefined ? data.useReferee : true;
+                    state.teamNames = data.teamNames || [];
+                    state.scores = data.scores || {};
+                    renderApp();
+                } else {
+                    if (state.isAdmin) saveToFirestore();
+                }
+            });
         }
-      }, (error) => {
-        console.error("Firestore sync error:", error);
-        showSyncStatus('オフライン/エラー', true);
-      });
-    }
 
-    function saveState() {
-      if (isRemoteUpdate) return;
-      if (isAdmin) {
-        pushToFirestore();
-      }
-    }
-
-    async function pushToFirestore() {
-      const fb = window.vballFirebase;
-      if (!fb || !fb.db || !fb.currentUser) return;
-
-      try {
-        const appId = fb.appId;
-        const docRef = fb.doc(fb.db, 'artifacts', appId, 'public', 'data', 'tournaments', tournamentId);
-        await fb.setDoc(docRef, {
-          config: config,
-          matches: matches,
-          updatedAt: new Date().toISOString()
-        });
-        showSyncStatus('保存完了');
-      } catch (e) {
-        console.error("Cloud push failed:", e);
-      }
-    }
-
-    function showSyncStatus(msg, isError = false) {
-      const el = document.getElementById('sync-status');
-      if (!el) return;
-      if (isError) {
-        el.className = "text-rose-400 text-[11px] font-semibold flex items-center gap-1 mr-2";
-        el.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> ${msg}`;
-      } else {
-        el.className = "text-emerald-400 text-[11px] font-semibold flex items-center gap-1 mr-2";
-        el.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> ${msg}`;
-      }
-    }
-
-    // Role & Mode Controls
-    function updateRoleUI() {
-      const roleBadge = document.getElementById('role-badge');
-      const authBtnText = document.getElementById('auth-btn-text');
-      const resetBtn = document.getElementById('admin-reset-btn');
-      const overlayBadge = document.getElementById('config-viewer-overlay-badge');
-      const refereeCard = document.getElementById('referee-setting-card');
-
-      if (isAdmin) {
-        roleBadge.className = "bg-amber-400 text-slate-950 font-black px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow";
-        roleBadge.innerHTML = `<i class="fa-solid fa-user-gear"></i> 管理者モード`;
-        authBtnText.innerText = "ログアウト";
-        resetBtn.classList.remove('hidden');
-        overlayBadge.classList.add('hidden');
-        refereeCard.classList.remove('hidden'); // 管理者モード時のみ審判スイッチを表示
-      } else {
-        roleBadge.className = "bg-slate-700 text-slate-300 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5";
-        roleBadge.innerHTML = `<i class="fa-solid fa-eye"></i> 閲覧モード`;
-        authBtnText.innerText = "管理者ログイン";
-        resetBtn.classList.add('hidden');
-        overlayBadge.classList.remove('hidden');
-        refereeCard.classList.add('hidden'); // 閲覧モードでは審判スイッチを非表示
-      }
-
-      document.getElementById('team-count-slider').disabled = !isAdmin;
-      document.getElementById('court-count-select').disabled = !isAdmin;
-
-      renderTeamInputs();
-      renderSchedule();
-    }
-
-    function toggleAuthModal() {
-      if (isAdmin) {
-        isAdmin = false;
-        updateRoleUI();
-        showToast("閲覧モードに切替えました", "info");
-      } else {
-        document.getElementById('auth-modal').classList.remove('hidden');
-        const inputEl = document.getElementById('admin-passcode-input');
-        inputEl.value = '';
-        inputEl.type = 'password';
-        document.getElementById('passcode-eye-icon').className = 'fa-solid fa-eye';
-        document.getElementById('auth-error-msg').classList.add('hidden');
-      }
-    }
-
-    function closeAuthModal() {
-      document.getElementById('auth-modal').classList.add('hidden');
-    }
-
-    function togglePasscodeVisibility() {
-      const inputEl = document.getElementById('admin-passcode-input');
-      const eyeIcon = document.getElementById('passcode-eye-icon');
-      if (inputEl.type === 'password') {
-        inputEl.type = 'text';
-        eyeIcon.className = 'fa-solid fa-eye-slash';
-      } else {
-        inputEl.type = 'password';
-        eyeIcon.className = 'fa-solid fa-eye';
-      }
-    }
-
-    function submitAdminPasscode() {
-      const input = document.getElementById('admin-passcode-input').value;
-      if (input === ADMIN_PASSCODE) {
-        isAdmin = true;
-        closeAuthModal();
-        updateRoleUI();
-        pushToFirestore();
-        showToast("管理者としてログインしました", "success");
-      } else {
-        const errEl = document.getElementById('auth-error-msg');
-        errEl.classList.remove('hidden');
-        
-        const cardEl = document.getElementById('auth-modal-card');
-        cardEl.classList.add('animate-shake');
-        setTimeout(() => {
-          cardEl.classList.remove('animate-shake');
-        }, 300);
-      }
-    }
-
-    function syncUIWithConfig() {
-      document.getElementById('team-count-slider').value = config.teamCount;
-      document.getElementById('team-count-display').innerText = `${config.teamCount}チーム`;
-      document.getElementById('court-count-select').value = config.courtCount;
-      document.getElementById('referee-toggle').checked = config.hasReferee;
-    }
-
-    function handleTeamCountSlider(val) {
-      if (!isAdmin) return;
-      const num = parseInt(val, 10);
-      document.getElementById('team-count-display').innerText = `${num}チーム`;
-      updateSettingsFromUI();
-    }
-
-    function updateSettingsFromUI() {
-      if (!isAdmin) return;
-
-      const newTeamCount = parseInt(document.getElementById('team-count-slider').value, 10);
-      const newCourtCount = parseInt(document.getElementById('court-count-select').value, 10);
-      const newHasReferee = document.getElementById('referee-toggle').checked;
-
-      const teamCountChanged = config.teamCount !== newTeamCount;
-      const refereeChanged = config.hasReferee !== newHasReferee;
-      const courtChanged = config.courtCount !== newCourtCount;
-
-      config.teamCount = newTeamCount;
-      config.courtCount = newCourtCount;
-      config.hasReferee = newHasReferee;
-
-      if (config.teams.length < config.teamCount) {
-        for (let i = config.teams.length + 1; i <= config.teamCount; i++) {
-          config.teams.push({ id: i, name: `チーム${i}` });
+        function saveToFirestore() {
+            docRef.set({
+                teamCount: state.teamCount,
+                courtCount: state.courtCount,
+                useReferee: state.useReferee,
+                teamNames: state.teamNames,
+                scores: state.scores
+            });
         }
-      } else if (config.teams.length > config.teamCount) {
-        config.teams = config.teams.slice(0, config.teamCount);
-      }
 
-      renderTeamInputs();
+        function initUI() {
+            document.getElementById('admin-toggle-btn').addEventListener('click', () => {
+                if (state.isAdmin) {
+                    state.isAdmin = false;
+                    updateAdminUI();
+                } else {
+                    document.getElementById('login-modal').classList.remove('hidden');
+                    document.getElementById('admin-passcode').value = '';
+                    document.getElementById('login-error').classList.add('hidden');
+                    document.getElementById('admin-passcode').focus();
+                }
+            });
 
-      if (teamCountChanged || refereeChanged || courtChanged || matches.length === 0) {
-        generateSchedule();
-      }
+            document.getElementById('close-modal-btn').addEventListener('click', () => {
+                document.getElementById('login-modal').classList.add('hidden');
+            });
+            document.getElementById('cancel-login-btn').addEventListener('click', () => {
+                document.getElementById('login-modal').classList.add('hidden');
+            });
 
-      renderSchedule();
-      renderCrossTable();
-      updateStandings();
-      saveState();
-    }
+            document.getElementById('submit-login-btn').addEventListener('click', performLogin);
+            document.getElementById('admin-passcode').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') performLogin();
+            });
 
-    function renderTeamInputs() {
-      const container = document.getElementById('team-names-grid');
-      container.innerHTML = '';
+            document.getElementById('toggle-passcode-visibility').addEventListener('click', () => {
+                const passInput = document.getElementById('admin-passcode');
+                const eyeIcon = document.getElementById('passcode-eye-icon');
+                if (passInput.type === 'password') {
+                    passInput.type = 'text';
+                    eyeIcon.setAttribute('data-lucide', 'eye-off');
+                } else {
+                    passInput.type = 'password';
+                    eyeIcon.setAttribute('data-lucide', 'eye');
+                }
+                lucide.createIcons();
+            });
 
-      config.teams.forEach((team, idx) => {
-        const div = document.createElement('div');
-        div.className = `flex items-center space-x-1.5 border rounded-lg p-1.5 transition ${isAdmin ? 'bg-slate-50 border-slate-200 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white' : 'bg-slate-100 border-slate-200 opacity-80'}`;
-        div.innerHTML = `
-          <span class="text-xs font-black text-indigo-600 bg-indigo-100 w-5 h-5 rounded flex items-center justify-center shrink-0">${idx + 1}</span>
-          <input type="text" value="${escapeHtml(team.name)}" 
-                 ${!isAdmin ? 'readonly' : ''}
-                 onchange="updateTeamName(${team.id}, this.value)"
-                 class="w-full bg-transparent text-xs font-bold text-slate-700 focus:outline-none ${!isAdmin ? 'cursor-not-allowed' : ''}" 
-                 placeholder="チーム名">
-        `;
-        container.appendChild(div);
-      });
-    }
+            document.getElementById('share-btn').addEventListener('click', () => {
+                navigator.clipboard.writeText(window.location.href);
+                alert('共有用URLをコピーしました！LINE等で全員に共有できます。');
+            });
 
-    function updateTeamName(teamId, newName) {
-      if (!isAdmin) return;
-      const trimmed = newName.trim();
-      const team = config.teams.find(t => t.id === teamId);
-      if (team) {
-        team.name = trimmed !== '' ? trimmed : `チーム${teamId}`;
-        saveState();
-        renderSchedule();
-        renderCrossTable();
-        updateStandings();
-      }
-    }
+            document.getElementById('team-count').addEventListener('change', (e) => {
+                const val = parseInt(e.target.value);
+                state.teamCount = val;
+                if (state.teamNames.length < val) {
+                    for (let i = state.teamNames.length; i < val; i++) {
+                        state.teamNames.push(`チーム${i+1}`);
+                    }
+                } else if (state.teamNames.length > val) {
+                    state.teamNames = state.teamNames.slice(0, val);
+                }
+                if (state.isAdmin) saveToFirestore();
+            });
 
-    function generateSchedule() {
-      matches = [];
-      const numTeams = config.teams.length;
-      let teamIds = config.teams.map(t => t.id);
+            document.getElementById('court-count').addEventListener('change', (e) => {
+                state.courtCount = parseInt(e.target.value);
+                if (state.isAdmin) saveToFirestore();
+            });
 
-      if (numTeams % 2 !== 0) {
-        teamIds.push(0);
-      }
+            document.getElementById('referee-toggle').addEventListener('change', (e) => {
+                state.useReferee = e.target.checked;
+                if (state.isAdmin) saveToFirestore();
+            });
 
-      const totalRounds = teamIds.length - 1;
-      const matchesPerRound = teamIds.length / 2;
-
-      let roundMatchesList = [];
-      let tempTeams = [...teamIds];
-
-      for (let r = 0; r < totalRounds; r++) {
-        let roundMatches = [];
-        for (let m = 0; m < matchesPerRound; m++) {
-          const t1 = tempTeams[m];
-          const t2 = tempTeams[tempTeams.length - 1 - m];
-
-          if (t1 !== 0 && t2 !== 0) {
-            roundMatches.push({ team1Id: t1, team2Id: t2 });
-          }
+            document.getElementById('reset-btn').addEventListener('click', () => {
+                if (confirm('すべてのスコアをリセットしてもよろしいですか？')) {
+                    state.scores = {};
+                    if (state.isAdmin) saveToFirestore();
+                }
+            });
         }
-        roundMatchesList.push(roundMatches);
-        tempTeams.splice(1, 0, tempTeams.pop());
-      }
 
-      const allMatchesRaw = [];
-      roundMatchesList.forEach(rm => {
-        rm.forEach(m => allMatchesRaw.push(m));
-      });
-
-      const courtCount = config.courtCount;
-      let matchIdCounter = 1;
-
-      for (let i = 0; i < allMatchesRaw.length; i += courtCount) {
-        const matchNum = Math.floor(i / courtCount) + 1;
-        const chunk = allMatchesRaw.slice(i, i + courtCount);
-
-        chunk.forEach((pair, cIdx) => {
-          const courtNum = cIdx + 1;
-
-          matches.push({
-            id: matchIdCounter++,
-            matchNum: matchNum,
-            court: courtNum,
-            team1Id: pair.team1Id,
-            team2Id: pair.team2Id,
-            refereeId: null,
-            score1: null,
-            score2: null,
-            isFinished: false
-          });
-        });
-      }
-
-      assignRefereesToMatches();
-      saveState();
-    }
-
-    function assignRefereesToMatches() {
-      if (!config.hasReferee) {
-        matches.forEach(m => m.refereeId = null);
-        return;
-      }
-
-      const matchGroups = {};
-      matches.forEach(m => {
-        if (!matchGroups[m.matchNum]) matchGroups[m.matchNum] = [];
-        matchGroups[m.matchNum].push(m);
-      });
-
-      Object.keys(matchGroups).forEach(mNum => {
-        const group = matchGroups[mNum];
-
-        const playingTeamIds = new Set();
-        group.forEach(m => {
-          playingTeamIds.add(m.team1Id);
-          playingTeamIds.add(m.team2Id);
-        });
-
-        const idleTeamIds = config.teams
-          .map(t => t.id)
-          .filter(id => !playingTeamIds.has(id));
-
-        let refIdx = 0;
-        group.forEach(m => {
-          if (idleTeamIds.length > refIdx) {
-            m.refereeId = idleTeamIds[refIdx];
-            refIdx++;
-          } else if (idleTeamIds.length > 0) {
-            m.refereeId = idleTeamIds[refIdx % idleTeamIds.length];
-            refIdx++;
-          } else {
-            m.refereeId = null;
-          }
-        });
-      });
-    }
-
-    function renderSchedule() {
-      const container = document.getElementById('schedule-container');
-      container.innerHTML = '';
-
-      if (matches.length === 0) {
-        container.innerHTML = `<div class="text-center py-8 text-slate-400 text-sm font-bold">対戦カードが生成されていません</div>`;
-        return;
-      }
-
-      const matchGroups = {};
-      matches.forEach(m => {
-        if (!matchGroups[m.matchNum]) matchGroups[m.matchNum] = [];
-        matchGroups[m.matchNum].push(m);
-      });
-
-      Object.keys(matchGroups).forEach(mNum => {
-        const groupMatches = matchGroups[mNum];
-
-        const matchDiv = document.createElement('div');
-        matchDiv.className = 'bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 sm:p-5 space-y-3';
-
-        let headerHTML = `
-          <div class="flex items-center justify-between border-b border-slate-200/80 pb-3">
-            <h3 class="font-black text-slate-800 text-base sm:text-lg flex items-center gap-2">
-              <span class="w-3.5 h-3.5 rounded-full bg-indigo-600"></span> 第${mNum}試合
-            </h3>
-            <span class="text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg">
-              ${groupMatches.length} コート実施
-            </span>
-          </div>
-        `;
-
-        let cardsHTML = '';
-        groupMatches.forEach(match => {
-          const team1 = getTeam(match.team1Id);
-          const team2 = getTeam(match.team2Id);
-          const referee = match.refereeId ? getTeam(match.refereeId) : null;
-          const isFinished = match.isFinished;
-
-          const statusBadge = isFinished 
-            ? `<span class="bg-emerald-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-sm"><i class="fa-solid fa-check mr-0.5"></i>完了</span>`
-            : `<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md border border-amber-200"><i class="fa-solid fa-clock mr-0.5"></i>未完</span>`;
-
-          let refereeHTML = '';
-          if (config.hasReferee) {
-            const refereeOptions = config.teams
-              .filter(t => t.id !== match.team1Id && t.id !== match.team2Id)
-              .map(t => `<option value="${t.id}" ${match.refereeId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`)
-              .join('');
-
-            refereeHTML = `
-              <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span class="font-bold text-slate-500 flex items-center gap-1">
-                  <i class="fa-solid fa-user-shield text-indigo-500"></i> 審判:
-                </span>
-                ${isAdmin ? `
-                  <select onchange="manualUpdateReferee(${match.id}, this.value)" 
-                          class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">(指定なし)</option>
-                    ${refereeOptions}
-                  </select>
-                ` : `
-                  <span class="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                    ${referee ? escapeHtml(referee.name) : '-'}
-                  </span>
-                `}
-              </div>
-            `;
-          }
-
-          cardsHTML += `
-            <div class="match-card bg-white rounded-xl border ${isFinished ? 'border-emerald-200/80 shadow-sm' : 'border-slate-200 shadow-sm'} p-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-3">
-                  <span class="text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg">
-                    <i class="fa-solid fa-volleyball mr-1"></i> 第${match.court}コート
-                  </span>
-                  ${statusBadge}
-                </div>
-
-                <div class="grid grid-cols-7 items-center gap-2 text-center my-2">
-                  <div class="col-span-3 text-right">
-                    <div class="font-extrabold text-xs sm:text-sm text-slate-800 truncate" title="${escapeHtml(team1.name)}">
-                      ${escapeHtml(team1.name)}
-                    </div>
-                  </div>
-
-                  <div class="col-span-1 text-center font-black text-slate-300 text-xs">
-                    VS
-                  </div>
-
-                  <div class="col-span-3 text-left">
-                    <div class="font-extrabold text-xs sm:text-sm text-slate-800 truncate" title="${escapeHtml(team2.name)}">
-                      ${escapeHtml(team2.name)}
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Score Controls -->
-                <div class="flex items-center justify-center space-x-2 my-3">
-                  <input type="number" min="0" max="99" 
-                         value="${match.score1 !== null ? match.score1 : ''}" 
-                         placeholder="0"
-                         ${!isAdmin ? 'disabled' : ''}
-                         oninput="handleScoreInput(${match.id}, 1, this.value)"
-                         class="w-14 h-11 text-center text-lg font-black bg-slate-50 border-2 ${match.score1 > match.score2 && isFinished ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-300'} rounded-xl focus:bg-white focus:border-indigo-500 focus:outline-none disabled:opacity-80 disabled:bg-slate-100 transition">
-
-                  <span class="text-slate-400 font-black text-lg">:</span>
-
-                  <input type="number" min="0" max="99" 
-                         value="${match.score2 !== null ? match.score2 : ''}" 
-                         placeholder="0"
-                         ${!isAdmin ? 'disabled' : ''}
-                         oninput="handleScoreInput(${match.id}, 2, this.value)"
-                         class="w-14 h-11 text-center text-lg font-black bg-slate-50 border-2 ${match.score2 > match.score1 && isFinished ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-300'} rounded-xl focus:bg-white focus:border-indigo-500 focus:outline-none disabled:opacity-80 disabled:bg-slate-100 transition">
-                </div>
-              </div>
-
-              ${refereeHTML}
-            </div>
-          `;
-        });
-
-        matchDiv.innerHTML = headerHTML + `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">${cardsHTML}</div>`;
-        container.appendChild(matchDiv);
-      });
-    }
-
-    function handleScoreInput(matchId, teamNum, val) {
-      if (!isAdmin) return;
-      const match = matches.find(m => m.id === matchId);
-      if (!match) return;
-
-      const scoreVal = val === '' ? null : parseInt(val, 10);
-
-      if (teamNum === 1) {
-        match.score1 = isNaN(scoreVal) || scoreVal < 0 ? null : scoreVal;
-      } else {
-        match.score2 = isNaN(scoreVal) || scoreVal < 0 ? null : scoreVal;
-      }
-
-      if (match.score1 !== null && match.score2 !== null && match.score1 !== match.score2) {
-        match.isFinished = true;
-      } else {
-        match.isFinished = false;
-      }
-
-      saveState();
-      renderCrossTable();
-      updateStandings();
-    }
-
-    function manualUpdateReferee(matchId, refereeIdStr) {
-      if (!isAdmin) return;
-      const match = matches.find(m => m.id === matchId);
-      if (match) {
-        match.refereeId = refereeIdStr ? parseInt(refereeIdStr, 10) : null;
-        saveState();
-      }
-    }
-
-    function renderCrossTable() {
-      const table = document.getElementById('crosstable');
-      table.innerHTML = '';
-
-      const teams = config.teams;
-
-      let headerHTML = `<thead class="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200"><tr><th class="p-2.5 border border-slate-200 bg-slate-200/50">対戦</th>`;
-      teams.forEach(t => {
-        headerHTML += `<th class="p-2.5 border border-slate-200 min-w-[75px] max-w-[100px] truncate" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</th>`;
-      });
-      headerHTML += `</tr></thead>`;
-
-      let bodyHTML = '<tbody>';
-      teams.forEach(rowTeam => {
-        bodyHTML += `<tr class="border-b border-slate-200"><td class="p-2.5 border border-slate-200 font-bold text-left bg-slate-50 text-slate-800 truncate max-w-[120px]">${escapeHtml(rowTeam.name)}</td>`;
-
-        teams.forEach(colTeam => {
-          if (rowTeam.id === colTeam.id) {
-            bodyHTML += `<td class="p-2 border border-slate-200 bg-slate-200/50 text-slate-400 font-bold">―</td>`;
-          } else {
-            const match = matches.find(m => 
-              (m.team1Id === rowTeam.id && m.team2Id === colTeam.id) ||
-              (m.team1Id === colTeam.id && m.team2Id === rowTeam.id)
-            );
-
-            if (match && match.isFinished) {
-              const isTeam1 = match.team1Id === rowTeam.id;
-              const myScore = isTeam1 ? match.score1 : match.score2;
-              const oppScore = isTeam1 ? match.score2 : match.score1;
-
-              const isWin = myScore > oppScore;
-              const cellBg = isWin ? 'bg-emerald-50 text-emerald-800 font-bold' : 'bg-rose-50 text-rose-800 font-bold';
-              const symbol = isWin ? '○' : '×';
-
-              bodyHTML += `
-                <td class="p-2 border border-slate-200 ${cellBg}">
-                  <div class="text-[10px] font-black">${symbol}</div>
-                  <div class="text-xs font-black">${myScore} - ${oppScore}</div>
-                </td>
-              `;
+        function performLogin() {
+            const pass = document.getElementById('admin-passcode').value;
+            if (pass === ADMIN_PASSCODE) {
+                state.isAdmin = true;
+                document.getElementById('login-modal').classList.add('hidden');
+                updateAdminUI();
             } else {
-              bodyHTML += `<td class="p-2 border border-slate-200 text-slate-300 font-medium">-</td>`;
+                document.getElementById('login-error').classList.remove('hidden');
             }
-          }
-        });
-
-        bodyHTML += `</tr>`;
-      });
-      bodyHTML += '</tbody>';
-
-      table.innerHTML = headerHTML + bodyHTML;
-    }
-
-    function updateStandings() {
-      const standingsBody = document.getElementById('standings-body');
-
-      const stats = config.teams.map(t => ({
-        id: t.id,
-        name: t.name,
-        played: 0,
-        wins: 0,
-        losses: 0,
-        pointsScored: 0,
-        pointsConceded: 0,
-        pointDiff: 0
-      }));
-
-      matches.forEach(m => {
-        if (m.isFinished && m.score1 !== null && m.score2 !== null) {
-          const t1 = stats.find(s => s.id === m.team1Id);
-          const t2 = stats.find(s => s.id === m.team2Id);
-
-          if (t1 && t2) {
-            t1.played++;
-            t2.played++;
-
-            t1.pointsScored += m.score1;
-            t1.pointsConceded += m.score2;
-
-            t2.pointsScored += m.score2;
-            t2.pointsConceded += m.score1;
-
-            if (m.score1 > m.score2) {
-              t1.wins++;
-              t2.losses++;
-            } else if (m.score2 > m.score1) {
-              t2.wins++;
-              t1.losses++;
-            }
-          }
-        }
-      });
-
-      stats.forEach(s => {
-        s.pointDiff = s.pointsScored - s.pointsConceded;
-      });
-
-      stats.sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
-        if (b.pointsScored !== a.pointsScored) return b.pointsScored - a.pointsScored;
-        return a.pointsConceded - b.pointsConceded;
-      });
-
-      standingsBody.innerHTML = '';
-      stats.forEach((teamStat, idx) => {
-        const rank = idx + 1;
-
-        let rankBadge = `<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black bg-slate-800 text-slate-300">${rank}</span>`;
-        if (rank === 1) {
-          rankBadge = `<span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-black bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/30"><i class="fa-solid fa-crown text-amber-900 text-[10px] mr-0.5"></i>1</span>`;
-        } else if (rank === 2) {
-          rankBadge = `<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black bg-slate-300 text-slate-950">2</span>`;
-        } else if (rank === 3) {
-          rankBadge = `<span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black bg-amber-700 text-amber-100">3</span>`;
         }
 
-        const diffStr = teamStat.pointDiff > 0 ? `+${teamStat.pointDiff}` : `${teamStat.pointDiff}`;
-        const diffColor = teamStat.pointDiff > 0 ? 'text-emerald-400' : teamStat.pointDiff < 0 ? 'text-rose-400' : 'text-slate-400';
+        function updateAdminUI() {
+            const banner = document.getElementById('mode-banner');
+            const controls = document.getElementById('controls-section');
+            const adminLabel = document.getElementById('admin-label');
+            const adminIcon = document.getElementById('admin-icon');
+            const refCard = document.getElementById('referee-setting-card');
 
-        const row = document.createElement('tr');
-        row.className = rank === 1 ? 'bg-amber-400/10 font-bold' : 'hover:bg-slate-800/40 transition';
+            if (state.isAdmin) {
+                banner.className = "bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded text-sm flex items-center justify-between";
+                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-600"></i><span><strong>管理者モード</strong>でログイン中。リアルタイム同期で全画面へ反映されます。</span></div>`;
+                controls.classList.remove('opacity-60', 'pointer-events-none');
+                refCard.classList.remove('hidden');
+                adminLabel.textContent = "管理者";
+                adminIcon.setAttribute('data-lucide', 'unlock');
+            } else {
+                banner.className = "bg-slate-200 border-l-4 border-slate-500 text-slate-700 p-3 rounded text-sm flex items-center justify-between";
+                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="eye" class="w-5 h-5 text-slate-600"></i><span>現在は<strong>閲覧専用モード</strong>です。スコア入力や設定変更は行えません。</span></div>`;
+                controls.classList.add('opacity-60', 'pointer-events-none');
+                refCard.classList.add('hidden');
+                adminLabel.textContent = "閲覧モード";
+                adminIcon.setAttribute('data-lucide', 'lock');
+            }
+            lucide.createIcons();
+            renderApp();
+        }
 
-        row.innerHTML = `
-          <td class="py-3.5 px-3 text-center">${rankBadge}</td>
-          <td class="py-3.5 px-4 font-black text-white text-sm">${escapeHtml(teamStat.name)}</td>
-          <td class="py-3.5 px-2 text-center text-slate-300">${teamStat.played}</td>
-          <td class="py-3.5 px-2 text-center font-black text-emerald-400">${teamStat.wins}</td>
-          <td class="py-3.5 px-2 text-center text-slate-400">${teamStat.losses}</td>
-          <td class="py-3.5 px-2 text-center text-slate-300">${teamStat.pointsScored}</td>
-          <td class="py-3.5 px-2 text-center text-slate-400">${teamStat.pointsConceded}</td>
-          <td class="py-3.5 px-3 text-center font-black ${diffColor}">${diffStr}</td>
-        `;
+        function renderApp() {
+            document.getElementById('team-count').value = state.teamCount;
+            document.getElementById('court-count').value = state.courtCount;
+            document.getElementById('referee-toggle').checked = state.useReferee;
 
-        standingsBody.appendChild(row);
-      });
-    }
+            const nameContainer = document.getElementById('team-names-container');
+            nameContainer.innerHTML = '';
+            for (let i = 0; i < state.teamCount; i++) {
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <input type="text" data-index="${i}" value="${state.teamNames[i] || `チーム${i+1}`}" 
+                        class="team-name-input w-full bg-slate-50 border border-slate-300 text-xs rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500" 
+                        placeholder="チーム${i+1}" ${!state.isAdmin ? 'disabled' : ''}>
+                `;
+                nameContainer.appendChild(div);
+            }
 
-    function copyShareLink() {
-      const shareUrl = window.location.href;
-      const tempInput = document.createElement('input');
-      tempInput.value = shareUrl;
-      document.body.appendChild(tempInput);
-      tempInput.select();
-      try {
-        document.execCommand('copy');
-        showToast("共有URLをコピーしました！LINEやメールで共有可能です。", "success");
-      } catch (err) {
-        showToast("コピーに失敗しました", "error");
-      }
-      document.body.removeChild(tempInput);
-    }
+            document.querySelectorAll('.team-name-input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const idx = parseInt(e.target.getAttribute('data-index'));
+                    state.teamNames[idx] = e.target.value.trim() || `チーム${idx+1}`;
+                    if (state.isAdmin) saveToFirestore();
+                });
+            });
 
-    function openResetModal() {
-      if (!isAdmin) return;
-      document.getElementById('reset-modal').classList.remove('hidden');
-    }
+            const schedule = generateSchedule(state.teamCount, state.courtCount);
+            renderMatches(schedule);
+            renderRankings(schedule);
 
-    function closeResetModal() {
-      document.getElementById('reset-modal').classList.add('hidden');
-    }
+            lucide.createIcons();
+        }
 
-    function confirmReset() {
-      if (!isAdmin) return;
-      config.teamCount = 6;
-      config.courtCount = 2;
-      config.hasReferee = true;
-      config.teams = [
-        { id: 1, name: "チーム1" },
-        { id: 2, name: "チーム2" },
-        { id: 3, name: "チーム3" },
-        { id: 4, name: "チーム4" },
-        { id: 5, name: "チーム5" },
-        { id: 6, name: "チーム6" }
-      ];
+        function generateSchedule(n, courtCount) {
+            let teams = Array.from({length: n}, (_, i) => i);
+            if (n % 2 !== 0) teams.push(-1);
 
-      syncUIWithConfig();
-      renderTeamInputs();
-      generateSchedule();
-      renderSchedule();
-      renderCrossTable();
-      updateStandings();
+            let numTeams = teams.length;
+            let roundsCount = numTeams - 1;
+            let rawPairs = [];
+            let tempTeams = [...teams];
 
-      saveState();
-      closeResetModal();
-      showToast("データを初期化しました", "info");
-    }
+            for (let r = 0; r < roundsCount; r++) {
+                for (let i = 0; i < numTeams / 2; i++) {
+                    let t1 = tempTeams[i];
+                    let t2 = tempTeams[numTeams - 1 - i];
+                    if (t1 !== -1 && t2 !== -1) rawPairs.push({ t1, t2 });
+                }
+                tempTeams.splice(1, 0, tempTeams.pop());
+            }
 
-    function getTeam(id) {
-      return config.teams.find(t => t.id === id) || { id: id, name: `チーム${id}` };
-    }
+            let matches = [];
+            let currentSlot = [];
 
-    function scrollToSection(id) {
-      const el = document.getElementById(id);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
+            rawPairs.forEach(pair => {
+                currentSlot.push(pair);
+                if (currentSlot.length === courtCount) {
+                    matches.push(currentSlot);
+                    currentSlot = [];
+                }
+            });
+            if (currentSlot.length > 0) matches.push(currentSlot);
 
-    function showToast(msg, type = "success") {
-      const toast = document.getElementById('toast');
-      const toastMsg = document.getElementById('toast-message');
-      const toastIcon = document.getElementById('toast-icon');
+            return matches.map((slot, matchIdx) => {
+                let playingTeams = new Set();
+                slot.forEach(p => {
+                    playingTeams.add(p.t1);
+                    playingTeams.add(p.t2);
+                });
 
-      toastMsg.innerText = msg;
-      if (type === "success") {
-        toastIcon.className = "fa-solid fa-circle-check text-emerald-400 text-base";
-      } else if (type === "error") {
-        toastIcon.className = "fa-solid fa-circle-exclamation text-rose-400 text-base";
-      } else {
-        toastIcon.className = "fa-solid fa-circle-info text-indigo-400 text-base";
-      }
+                let availableRefs = [];
+                for (let i = 0; i < n; i++) {
+                    if (!playingTeams.has(i)) availableRefs.push(i);
+                }
 
-      toast.classList.remove('translate-y-[-100px]', 'opacity-0', 'pointer-events-none');
-      setTimeout(() => {
-        toast.classList.add('translate-y-[-100px]', 'opacity-0', 'pointer-events-none');
-      }, 3000);
-    }
+                let games = slot.map((pair, courtIdx) => {
+                    let refTeam = (state.useReferee && availableRefs.length > courtIdx) ? availableRefs[courtIdx] : null;
+                    return {
+                        id: `m_${matchIdx}_${courtIdx}`,
+                        court: courtIdx + 1,
+                        t1: pair.t1,
+                        t2: pair.t2,
+                        ref: refTeam
+                    };
+                });
 
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, function(m) {
-        return {
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#039;'
-        }[m];
-      });
-    }
-  </script>
+                return { matchNum: matchIdx + 1, games: games };
+            });
+        }
+
+        function renderMatches(schedule) {
+            const container = document.getElementById('matches-container');
+            container.innerHTML = '';
+
+            schedule.forEach(matchBlock => {
+                const blockDiv = document.createElement('div');
+                blockDiv.className = "border border-slate-200 rounded-lg p-4 bg-slate-50/50";
+                
+                let gamesHtml = matchBlock.games.map(g => {
+                    const scoreData = state.scores[g.id] || { score1: '', score2: '' };
+                    const t1Name = state.teamNames[g.t1];
+                    const t2Name = state.teamNames[g.t2];
+                    const refName = g.ref !== null ? state.teamNames[g.ref] : null;
+
+                    return `
+                        <div class="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded">第${g.court}コート</span>
+                                ${refName ? `<span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded border border-slate-200">審判: ${refName}</span>` : ''}
+                            </div>
+                            
+                            <div class="flex items-center justify-center gap-3 flex-1">
+                                <span class="font-semibold text-slate-800 text-sm text-right flex-1 truncate">${t1Name}</span>
+                                <div class="flex items-center gap-1">
+                                    <input type="number" min="0" value="${scoreData.score1}" data-matchid="${g.id}" data-side="score1"
+                                        class="score-input w-12 h-10 text-center font-bold text-lg border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                        ${!state.isAdmin ? 'disabled' : ''}>
+                                    <span class="text-slate-400 font-bold">-</span>
+                                    <input type="number" min="0" value="${scoreData.score2}" data-matchid="${g.id}" data-side="score2"
+                                        class="score-input w-12 h-10 text-center font-bold text-lg border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                        ${!state.isAdmin ? 'disabled' : ''}>
+                                </div>
+                                <span class="font-semibold text-slate-800 text-sm text-left flex-1 truncate">${t2Name}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                blockDiv.innerHTML = `
+                    <h3 class="font-bold text-slate-700 text-sm mb-3 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                        第${matchBlock.matchNum}試合
+                    </h3>
+                    <div class="space-y-2">
+                        ${gamesHtml}
+                    </div>
+                `;
+
+                container.appendChild(blockDiv);
+            });
+
+            document.querySelectorAll('.score-input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const matchId = e.target.getAttribute('data-matchid');
+                    const side = e.target.getAttribute('data-side');
+                    const val = e.target.value;
+
+                    if (!state.scores[matchId]) {
+                        state.scores[matchId] = { score1: '', score2: '' };
+                    }
+                    state.scores[matchId][side] = val;
+                    if (state.isAdmin) saveToFirestore();
+                });
+            });
+        }
+
+        function renderRankings(schedule) {
+            let stats = Array.from({ length: state.teamCount }, (_, i) => ({
+                id: i,
+                name: state.teamNames[i],
+                played: 0,
+                wins: 0,
+                losses: 0,
+                ptsFor: 0,
+                ptsAgainst: 0,
+                diff: 0
+            }));
+
+            schedule.forEach(block => {
+                block.games.forEach(g => {
+                    const sc = state.scores[g.id];
+                    if (sc && sc.score1 !== '' && sc.score2 !== '') {
+                        const s1 = parseInt(sc.score1) || 0;
+                        const s2 = parseInt(sc.score2) || 0;
+
+                        if (g.t1 < state.teamCount && g.t2 < state.teamCount) {
+                            stats[g.t1].played++;
+                            stats[g.t2].played++;
+
+                            stats[g.t1].ptsFor += s1;
+                            stats[g.t1].ptsAgainst += s2;
+                            stats[g.t2].ptsFor += s2;
+                            stats[g.t2].ptsAgainst += s1;
+
+                            if (s1 > s2) {
+                                stats[g.t1].wins++;
+                                stats[g.t2].losses++;
+                            } else if (s2 > s1) {
+                                stats[g.t2].wins++;
+                                stats[g.t1].losses++;
+                            }
+                        }
+                    }
+                });
+            });
+
+            stats.forEach(st => st.diff = st.ptsFor - st.ptsAgainst);
+
+            stats.sort((a, b) => {
+                if (b.wins !== a.wins) return b.wins - a.wins;
+                if (b.diff !== a.diff) return b.diff - a.diff;
+                if (b.ptsFor !== a.ptsFor) return b.ptsFor - a.ptsFor;
+                return a.ptsAgainst - b.ptsAgainst;
+            });
+
+            const tbody = document.getElementById('ranking-tbody');
+            tbody.innerHTML = '';
+
+            stats.forEach((st, rank) => {
+                const tr = document.createElement('tr');
+                tr.className = rank % 2 === 0 ? 'bg-white' : 'bg-slate-50/50';
+                
+                let rankBadge = `<span class="font-bold text-slate-700">${rank + 1}</span>`;
+                if (rank === 0) rankBadge = `<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded-full">1位</span>`;
+                else if (rank === 1) rankBadge = `<span class="bg-slate-200 text-slate-800 text-xs font-bold px-2 py-1 rounded-full">2位</span>`;
+                else if (rank === 2) rankBadge = `<span class="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-full">3位</span>`;
+
+                tr.innerHTML = `
+                    <td class="px-4 py-3 text-center">${rankBadge}</td>
+                    <td class="px-4 py-3 font-semibold text-slate-800">${st.name}</td>
+                    <td class="px-4 py-3 text-center">${st.played}</td>
+                    <td class="px-4 py-3 text-center text-blue-600 font-bold">${st.wins}</td>
+                    <td class="px-4 py-3 text-center text-red-500">${st.losses}</td>
+                    <td class="px-4 py-3 text-center">${st.ptsFor}</td>
+                    <td class="px-4 py-3 text-center">${st.ptsAgainst}</td>
+                    <td class="px-4 py-3 text-center font-bold ${st.diff > 0 ? 'text-green-600' : st.diff < 0 ? 'text-red-500' : 'text-slate-600'}">${st.diff > 0 ? '+' + st.diff : st.diff}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
 </body>
 </html>
