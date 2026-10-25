@@ -8,9 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <!-- Firebase SDKs (v9 Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
         .score-input::-webkit-inner-spin-button,
         .score-input::-webkit-outer-spin-button {
@@ -214,12 +214,14 @@
                     state.teamCount = data.teamCount || 6;
                     state.courtCount = data.courtCount || 2;
                     state.useReferee = data.useReferee !== undefined ? data.useReferee : true;
-                    state.teamNames = data.teamNames || [];
+                    state.teamNames = data.teamNames || ["チーム1", "チーム2", "チーム3", "チーム4", "チーム5", "チーム6"];
                     state.scores = data.scores || {};
                     renderApp();
                 } else {
-                    if (state.isAdmin) saveToFirestore();
+                    saveToFirestore();
                 }
+            }, (error) => {
+                console.error("Firestore Error:", error);
             });
         }
 
@@ -230,7 +232,7 @@
                 useReferee: state.useReferee,
                 teamNames: state.teamNames,
                 scores: state.scores
-            });
+            }, { merge: true }).catch(err => console.error("Save Error:", err));
         }
 
         function initUI() {
@@ -272,7 +274,8 @@
             });
 
             document.getElementById('share-btn').addEventListener('click', () => {
-                navigator.clipboard.writeText(window.location.href);
+                const url = window.location.origin + window.location.pathname;
+                navigator.clipboard.writeText(url);
                 alert('共有用URLをコピーしました！LINE等で全員に共有できます。');
             });
 
@@ -286,23 +289,23 @@
                 } else if (state.teamNames.length > val) {
                     state.teamNames = state.teamNames.slice(0, val);
                 }
-                if (state.isAdmin) saveToFirestore();
+                saveToFirestore();
             });
 
             document.getElementById('court-count').addEventListener('change', (e) => {
                 state.courtCount = parseInt(e.target.value);
-                if (state.isAdmin) saveToFirestore();
+                saveToFirestore();
             });
 
             document.getElementById('referee-toggle').addEventListener('change', (e) => {
                 state.useReferee = e.target.checked;
-                if (state.isAdmin) saveToFirestore();
+                saveToFirestore();
             });
 
             document.getElementById('reset-btn').addEventListener('click', () => {
                 if (confirm('すべてのスコアをリセットしてもよろしいですか？')) {
                     state.scores = {};
-                    if (state.isAdmin) saveToFirestore();
+                    saveToFirestore();
                 }
             });
         }
@@ -327,7 +330,7 @@
 
             if (state.isAdmin) {
                 banner.className = "bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded text-sm flex items-center justify-between";
-                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-600"></i><span><strong>管理者モード</strong>でログイン中。リアルタイム同期で全画面へ反映されます。</span></div>`;
+                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-600"></i><span><strong>管理者モード</strong>でログイン中。スコア入力や変更がリアルタイムで共有されます。</span></div>`;
                 controls.classList.remove('opacity-60', 'pointer-events-none');
                 refCard.classList.remove('hidden');
                 adminLabel.textContent = "管理者";
@@ -485,7 +488,7 @@
             });
 
             document.querySelectorAll('.score-input').forEach(input => {
-                input.addEventListener('change', (e) => {
+                input.addEventListener('input', (e) => {
                     const matchId = e.target.getAttribute('data-matchid');
                     const side = e.target.getAttribute('data-side');
                     const val = e.target.value;
