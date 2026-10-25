@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Firebase SDKs (v9 Compat) -->
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
@@ -28,11 +28,11 @@
     <header class="bg-blue-600 text-white shadow-md">
         <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
             <div>
-                <h1 class="text-2xl font-bold flex items-center gap-2">
-                    <i data-lucide="trophy" class="w-7 h-7 text-yellow-300"></i>
+                <h1 class="text-xl sm:text-2xl font-bold flex items-center gap-2">
+                    <i data-lucide="trophy" class="w-6 h-6 text-yellow-300"></i>
                     バレーボール対戦表
                 </h1>
-                <p class="text-xs text-blue-100 mt-1">大会用・リアルタイム管理システム</p>
+                <p class="text-xs text-blue-100 mt-0.5">大会用・リアルタイム管理システム</p>
             </div>
             
             <div class="flex items-center gap-2">
@@ -55,7 +55,7 @@
         <div id="mode-banner" class="bg-slate-200 border-l-4 border-slate-500 text-slate-700 p-3 rounded text-sm flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <i data-lucide="eye" class="w-5 h-5 text-slate-600"></i>
-                <span>現在は<strong>閲覧専用モード</strong>です。スコア入力や設定変更は行えません。</span>
+                <span>現在は<strong>閲覧専用モード</strong>です。</span>
             </div>
         </div>
 
@@ -67,7 +67,7 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1">チーム数 (2〜10)</label>
-                    <select id="team-count" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                    <select id="team-count" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5">
                         <option value="2">2チーム</option>
                         <option value="3">3チーム</option>
                         <option value="4">4チーム</option>
@@ -82,7 +82,7 @@
 
                 <div>
                     <label class="block text-xs font-semibold text-slate-600 mb-1">使用コート数 (1〜4)</label>
-                    <select id="court-count" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                    <select id="court-count" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-sm rounded-lg p-2.5">
                         <option value="1">1コート</option>
                         <option value="2" selected>2コート</option>
                         <option value="3">3コート</option>
@@ -94,8 +94,8 @@
                     <label class="block text-xs font-semibold text-slate-600 mb-1">審判設定</label>
                     <label class="inline-flex items-center cursor-pointer mt-1">
                         <input type="checkbox" id="referee-toggle" class="sr-only peer" checked>
-                        <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        <span class="ms-3 text-sm font-medium text-slate-700">空きチームから審判を自動割り当て</span>
+                        <div class="relative w-11 h-6 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        <span class="ms-3 text-sm font-medium text-slate-700">審判の自動割り当て</span>
                     </label>
                 </div>
             </div>
@@ -120,23 +120,36 @@
             <div id="matches-container" class="space-y-6"></div>
         </div>
 
+        <!-- Excel-style Cross Matrix Table -->
+        <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2 border-b pb-2">
+                <i data-lucide="grid" class="w-5 h-5 text-green-600"></i> 総当たり星取表（対戦結果マトリクス）
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full border-collapse text-xs sm:text-sm text-center">
+                    <thead id="matrix-thead" class="bg-slate-100 text-slate-700"></thead>
+                    <tbody id="matrix-tbody" class="divide-y divide-slate-200"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Ranking Section -->
         <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
             <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2 border-b pb-2">
                 <i data-lucide="award" class="w-5 h-5 text-yellow-500"></i> 順位表（リアルタイム集計）
             </h2>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left text-slate-600">
+                <table class="min-w-[500px] w-full text-xs sm:text-sm text-left text-slate-600">
                     <thead class="text-xs text-slate-700 uppercase bg-slate-100">
                         <tr>
-                            <th class="px-4 py-3 text-center w-16">順位</th>
-                            <th class="px-4 py-3">チーム名</th>
-                            <th class="px-4 py-3 text-center">試合数</th>
-                            <th class="px-4 py-3 text-center">勝ち</th>
-                            <th class="px-4 py-3 text-center">負け</th>
-                            <th class="px-4 py-3 text-center">得点</th>
-                            <th class="px-4 py-3 text-center">失点</th>
-                            <th class="px-4 py-3 text-center">得失点差</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap min-w-[50px]">順位</th>
+                            <th class="px-3 py-2.5 whitespace-nowrap min-w-[100px]">チーム名</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap">試合数</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap">勝ち</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap">負け</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap">得点</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap">失点</th>
+                            <th class="px-3 py-2.5 text-center whitespace-nowrap">得失差</th>
                         </tr>
                     </thead>
                     <tbody id="ranking-tbody" class="divide-y divide-slate-200"></tbody>
@@ -185,7 +198,6 @@
             appId: "1:929403303920:web:a55aca4b7fcd507e7b0f35"
         };
 
-        // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
@@ -220,8 +232,6 @@
                 } else {
                     saveToFirestore();
                 }
-            }, (error) => {
-                console.error("Firestore Error:", error);
             });
         }
 
@@ -232,7 +242,7 @@
                 useReferee: state.useReferee,
                 teamNames: state.teamNames,
                 scores: state.scores
-            }, { merge: true }).catch(err => console.error("Save Error:", err));
+            }, { merge: true });
         }
 
         function initUI() {
@@ -289,23 +299,23 @@
                 } else if (state.teamNames.length > val) {
                     state.teamNames = state.teamNames.slice(0, val);
                 }
-                saveToFirestore();
+                if (state.isAdmin) saveToFirestore();
             });
 
             document.getElementById('court-count').addEventListener('change', (e) => {
                 state.courtCount = parseInt(e.target.value);
-                saveToFirestore();
+                if (state.isAdmin) saveToFirestore();
             });
 
             document.getElementById('referee-toggle').addEventListener('change', (e) => {
                 state.useReferee = e.target.checked;
-                saveToFirestore();
+                if (state.isAdmin) saveToFirestore();
             });
 
             document.getElementById('reset-btn').addEventListener('click', () => {
                 if (confirm('すべてのスコアをリセットしてもよろしいですか？')) {
                     state.scores = {};
-                    saveToFirestore();
+                    if (state.isAdmin) saveToFirestore();
                 }
             });
         }
@@ -330,14 +340,14 @@
 
             if (state.isAdmin) {
                 banner.className = "bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded text-sm flex items-center justify-between";
-                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-600"></i><span><strong>管理者モード</strong>でログイン中。スコア入力や変更がリアルタイムで共有されます。</span></div>`;
+                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-600"></i><span><strong>管理者モード</strong>でログイン中。リアルタイム同期されます。</span></div>`;
                 controls.classList.remove('opacity-60', 'pointer-events-none');
                 refCard.classList.remove('hidden');
                 adminLabel.textContent = "管理者";
                 adminIcon.setAttribute('data-lucide', 'unlock');
             } else {
                 banner.className = "bg-slate-200 border-l-4 border-slate-500 text-slate-700 p-3 rounded text-sm flex items-center justify-between";
-                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="eye" class="w-5 h-5 text-slate-600"></i><span>現在は<strong>閲覧専用モード</strong>です。スコア入力や設定変更は行えません。</span></div>`;
+                banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="eye" class="w-5 h-5 text-slate-600"></i><span>現在は<strong>閲覧専用モード</strong>です。</span></div>`;
                 controls.classList.add('opacity-60', 'pointer-events-none');
                 refCard.classList.add('hidden');
                 adminLabel.textContent = "閲覧モード";
@@ -374,6 +384,7 @@
 
             const schedule = generateSchedule(state.teamCount, state.courtCount);
             renderMatches(schedule);
+            renderMatrix();
             renderRankings(schedule);
 
             lucide.createIcons();
@@ -453,29 +464,29 @@
                     return `
                         <div class="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
                             <div class="flex items-center gap-2">
-                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded">第${g.court}コート</span>
-                                ${refName ? `<span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded border border-slate-200">審判: ${refName}</span>` : ''}
+                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap">第${g.court}コート</span>
+                                ${refName ? `<span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded border border-slate-200 whitespace-nowrap">審判: ${refName}</span>` : ''}
                             </div>
                             
-                            <div class="flex items-center justify-center gap-3 flex-1">
-                                <span class="font-semibold text-slate-800 text-sm text-right flex-1 truncate">${t1Name}</span>
-                                <div class="flex items-center gap-1">
+                            <div class="flex items-center justify-center gap-2 flex-1">
+                                <span class="font-semibold text-slate-800 text-xs sm:text-sm text-right flex-1 truncate">${t1Name}</span>
+                                <div class="flex items-center gap-1 shrink-0">
                                     <input type="number" min="0" value="${scoreData.score1}" data-matchid="${g.id}" data-side="score1"
-                                        class="score-input w-12 h-10 text-center font-bold text-lg border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                        class="score-input w-11 h-9 text-center font-bold text-base border border-slate-300 rounded bg-white"
                                         ${!state.isAdmin ? 'disabled' : ''}>
                                     <span class="text-slate-400 font-bold">-</span>
                                     <input type="number" min="0" value="${scoreData.score2}" data-matchid="${g.id}" data-side="score2"
-                                        class="score-input w-12 h-10 text-center font-bold text-lg border border-slate-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                        class="score-input w-11 h-9 text-center font-bold text-base border border-slate-300 rounded bg-white"
                                         ${!state.isAdmin ? 'disabled' : ''}>
                                 </div>
-                                <span class="font-semibold text-slate-800 text-sm text-left flex-1 truncate">${t2Name}</span>
+                                <span class="font-semibold text-slate-800 text-xs sm:text-sm text-left flex-1 truncate">${t2Name}</span>
                             </div>
                         </div>
                     `;
                 }).join('');
 
                 blockDiv.innerHTML = `
-                    <h3 class="font-bold text-slate-700 text-sm mb-3 flex items-center gap-2">
+                    <h3 class="font-bold text-slate-700 text-xs sm:text-sm mb-3 flex items-center gap-2">
                         <span class="w-2 h-2 rounded-full bg-blue-600"></span>
                         第${matchBlock.matchNum}試合
                     </h3>
@@ -500,6 +511,60 @@
                     if (state.isAdmin) saveToFirestore();
                 });
             });
+        }
+
+        // Excel-style Matrix Generation
+        function renderMatrix() {
+            const thead = document.getElementById('matrix-thead');
+            const tbody = document.getElementById('matrix-tbody');
+            const n = state.teamCount;
+
+            let headerHtml = `<tr><th class="p-2 border border-slate-200 bg-slate-200 min-w-[80px]">チーム</th>`;
+            for (let i = 0; i < n; i++) {
+                headerHtml += `<th class="p-2 border border-slate-200 min-w-[65px] font-semibold">${state.teamNames[i]}</th>`;
+            }
+            headerHtml += `</tr>`;
+            thead.innerHTML = headerHtml;
+
+            // Map match score by team index pairs
+            let matchResults = {};
+            const schedule = generateSchedule(n, state.courtCount);
+            schedule.forEach(block => {
+                block.games.forEach(g => {
+                    const sc = state.scores[g.id];
+                    if (sc && sc.score1 !== '' && sc.score2 !== '') {
+                        const s1 = parseInt(sc.score1) || 0;
+                        const s2 = parseInt(sc.score2) || 0;
+                        matchResults[`${g.t1}_${g.t2}`] = { s1, s2 };
+                        matchResults[`${g.t2}_${g.t1}`] = { s1: s2, s2: s1 };
+                    }
+                });
+            });
+
+            let bodyHtml = '';
+            for (let i = 0; i < n; i++) {
+                bodyHtml += `<tr><td class="p-2 border border-slate-200 bg-slate-100 font-bold whitespace-nowrap">${state.teamNames[i]}</td>`;
+                for (let j = 0; j < n; j++) {
+                    if (i === j) {
+                        bodyHtml += `<td class="p-2 border border-slate-200 bg-slate-300 text-slate-500 font-bold">✕</td>`;
+                    } else {
+                        const res = matchResults[`${i}_${j}`];
+                        if (res) {
+                            const win = res.s1 > res.s2;
+                            const draw = res.s1 === res.s2;
+                            const mark = win ? '○' : draw ? '△' : '●';
+                            const badgeColor = win ? 'text-blue-600 font-bold' : draw ? 'text-slate-600' : 'text-red-500';
+                            bodyHtml += `<td class="p-2 border border-slate-200 bg-white">
+                                <div class="${badgeColor}">${mark} ${res.s1} - ${res.s2}</div>
+                            </td>`;
+                        } else {
+                            bodyHtml += `<td class="p-2 border border-slate-200 bg-white text-slate-400">-</td>`;
+                        }
+                    }
+                }
+                bodyHtml += `</tr>`;
+            }
+            tbody.innerHTML = bodyHtml;
         }
 
         function renderRankings(schedule) {
@@ -559,19 +624,19 @@
                 tr.className = rank % 2 === 0 ? 'bg-white' : 'bg-slate-50/50';
                 
                 let rankBadge = `<span class="font-bold text-slate-700">${rank + 1}</span>`;
-                if (rank === 0) rankBadge = `<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded-full">1位</span>`;
-                else if (rank === 1) rankBadge = `<span class="bg-slate-200 text-slate-800 text-xs font-bold px-2 py-1 rounded-full">2位</span>`;
-                else if (rank === 2) rankBadge = `<span class="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-1 rounded-full">3位</span>`;
+                if (rank === 0) rankBadge = `<span class="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-0.5 rounded-full">1位</span>`;
+                else if (rank === 1) rankBadge = `<span class="bg-slate-200 text-slate-800 text-xs font-bold px-2 py-0.5 rounded-full">2位</span>`;
+                else if (rank === 2) rankBadge = `<span class="bg-amber-100 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">3位</span>`;
 
                 tr.innerHTML = `
-                    <td class="px-4 py-3 text-center">${rankBadge}</td>
-                    <td class="px-4 py-3 font-semibold text-slate-800">${st.name}</td>
-                    <td class="px-4 py-3 text-center">${st.played}</td>
-                    <td class="px-4 py-3 text-center text-blue-600 font-bold">${st.wins}</td>
-                    <td class="px-4 py-3 text-center text-red-500">${st.losses}</td>
-                    <td class="px-4 py-3 text-center">${st.ptsFor}</td>
-                    <td class="px-4 py-3 text-center">${st.ptsAgainst}</td>
-                    <td class="px-4 py-3 text-center font-bold ${st.diff > 0 ? 'text-green-600' : st.diff < 0 ? 'text-red-500' : 'text-slate-600'}">${st.diff > 0 ? '+' + st.diff : st.diff}</td>
+                    <td class="px-3 py-2.5 text-center whitespace-nowrap">${rankBadge}</td>
+                    <td class="px-3 py-2.5 font-semibold text-slate-800 whitespace-nowrap">${st.name}</td>
+                    <td class="px-3 py-2.5 text-center whitespace-nowrap">${st.played}</td>
+                    <td class="px-3 py-2.5 text-center text-blue-600 font-bold whitespace-nowrap">${st.wins}</td>
+                    <td class="px-3 py-2.5 text-center text-red-500 whitespace-nowrap">${st.losses}</td>
+                    <td class="px-3 py-2.5 text-center whitespace-nowrap">${st.ptsFor}</td>
+                    <td class="px-3 py-2.5 text-center whitespace-nowrap">${st.ptsAgainst}</td>
+                    <td class="px-3 py-2.5 text-center font-bold whitespace-nowrap ${st.diff > 0 ? 'text-green-600' : st.diff < 0 ? 'text-red-500' : 'text-slate-600'}">${st.diff > 0 ? '+' + st.diff : st.diff}</td>
                 `;
                 tbody.appendChild(tr);
             });
