@@ -197,6 +197,7 @@
         const ADMIN_PASSCODE = "0511";
         const docRef = db.collection('tournaments').doc('default_tournament');
         let isInitialized = false;
+        let lastStructureSignature = "";
 
         document.addEventListener("DOMContentLoaded", () => {
             initUI();
@@ -213,7 +214,15 @@
                     state.teamNames = data.teamNames || ["チーム1", "チーム2", "チーム3", "チーム4", "チーム5", "チーム6"];
                     state.scores = data.scores || {};
                     
-                    if (!isInitialized) {
+                    const currentSignature = JSON.stringify({
+                        t: state.teamCount,
+                        c: state.courtCount,
+                        r: state.useReferee,
+                        n: state.teamNames
+                    });
+
+                    if (!isInitialized || currentSignature !== lastStructureSignature) {
+                        lastStructureSignature = currentSignature;
                         renderApp();
                         isInitialized = true;
                     } else {
@@ -516,6 +525,10 @@
                         state.scores[matchId] = { score1: '', score2: '' };
                     }
                     state.scores[matchId][side] = val;
+
+                    const schedule = generateSchedule(state.teamCount, state.courtCount);
+                    renderMatrix();
+                    renderRankings(schedule);
                 });
                 
                 input.addEventListener('blur', (e) => {
@@ -573,7 +586,7 @@
                 }
                 bodyHtml += `</tr>`;
             }
-            tbody.tbody.innerHTML = bodyHtml;
+            tbody.innerHTML = bodyHtml;
         }
 
         function renderRankings(schedule) {
