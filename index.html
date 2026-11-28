@@ -95,7 +95,7 @@
                 <div id="team-names-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
             </div>
 
-            <div class="mt-4 flex flex-wrap justify-end gap-2">
+            <div id="admin-action-buttons" class="mt-4 flex flex-wrap justify-end gap-2 hidden">
                 <button id="shuffle-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
                     <i data-lucide="shuffle" class="w-4 h-4"></i> 試合順シャッフル
                 </button>
@@ -338,7 +338,6 @@
                     [allPairs[i], allPairs[j]] = [allPairs[j], allPairs[i]];
                 }
 
-                // 同じ試合枠（複数コート）に同じチームが重複しないよう優先配置
                 let orderedPairs = [];
                 let remaining = [...allPairs];
                 while (remaining.length > 0) {
@@ -392,12 +391,14 @@
             const adminLabel = document.getElementById('admin-label');
             const adminIcon = document.getElementById('admin-icon');
             const refCard = document.getElementById('referee-setting-card');
+            const actionButtons = document.getElementById('admin-action-buttons');
 
             if (state.isAdmin) {
                 banner.className = "bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded text-sm flex items-center justify-between";
                 banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-600"></i><span><strong>管理者モード</strong>でログイン中。</span></div>`;
                 controls.classList.remove('opacity-60', 'pointer-events-none');
                 refCard.classList.remove('hidden');
+                actionButtons.classList.remove('hidden');
                 adminLabel.textContent = "管理者";
                 adminIcon.setAttribute('data-lucide', 'unlock');
             } else {
@@ -405,6 +406,7 @@
                 banner.innerHTML = `<div class="flex items-center gap-2"><i data-lucide="eye" class="w-5 h-5 text-slate-600"></i><span>現在は<strong>閲覧専用モード</strong>です。</span></div>`;
                 controls.classList.add('opacity-60', 'pointer-events-none');
                 refCard.classList.add('hidden');
+                actionButtons.classList.add('hidden');
                 adminLabel.textContent = "閲覧モード";
                 adminIcon.setAttribute('data-lucide', 'lock');
             }
