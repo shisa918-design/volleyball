@@ -95,7 +95,10 @@
                 <div id="team-names-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2"></div>
             </div>
 
-            <div class="mt-4 flex justify-end">
+            <div class="mt-4 flex flex-wrap justify-end gap-2">
+                <button id="shuffle-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
+                    <i data-lucide="shuffle" class="w-4 h-4"></i> 試合順シャッフル
+                </button>
                 <button id="reset-btn" class="bg-red-500 hover:bg-red-600 text-white text-xs px-4 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i> スコアリセット
                 </button>
@@ -191,7 +194,8 @@
             courtCount: 2,
             useReferee: true,
             teamNames: ["チーム1", "チーム2", "チーム3", "チーム4", "チーム5", "チーム6"],
-            scores: {}
+            scores: {},
+            customPairs: null
         };
 
         const ADMIN_PASSCODE = "0511";
@@ -213,12 +217,14 @@
                     state.useReferee = data.useReferee !== undefined ? data.useReferee : true;
                     state.teamNames = data.teamNames || ["チーム1", "チーム2", "チーム3", "チーム4", "チーム5", "チーム6"];
                     state.scores = data.scores || {};
+                    state.customPairs = data.customPairs || null;
                     
                     const currentSignature = JSON.stringify({
                         t: state.teamCount,
                         c: state.courtCount,
                         r: state.useReferee,
-                        n: state.teamNames
+                        n: state.teamNames,
+                        p: state.customPairs
                     });
 
                     if (!isInitialized || currentSignature !== lastStructureSignature) {
@@ -240,7 +246,8 @@
                 courtCount: state.courtCount,
                 useReferee: state.useReferee,
                 teamNames: state.teamNames,
-                scores: state.scores
+                scores: state.scores,
+                customPairs: state.customPairs
             }, { merge: true });
         }
 
@@ -291,6 +298,7 @@
             document.getElementById('team-count').addEventListener('change', (e) => {
                 const val = parseInt(e.target.value);
                 state.teamCount = val;
+                state.customPairs = null;
                 if (state.teamNames.length < val) {
                     for (let i = state.teamNames.length; i < val; i++) {
                         state.teamNames.push(`チーム${i+1}`);
@@ -308,6 +316,54 @@
 
             document.getElementById('referee-toggle').addEventListener('change', (e) => {
                 state.useReferee = e.target.checked;
+                if (state.isAdmin) saveToFirestore();
+            });
+
+            document.getElementById('shuffle-btn').addEventListener('click', () => {
+                if (!confirm('試合順をランダムにシャッフルしますか？（入力済みのスコアはリセットされます）')) return;
+                
+                let allPairs = [];
+                for (let i = 0; i < state.teamCount; i++) {
+                    for (let j = i + 1; j < state.teamCount; j++) {
+                        if (Math.random() < 0.5) {
+                            allPairs.push({ t1: i, t2: j });
+                        } else {
+                            allPairs.push({ t1: j, t2: i });
+                        }
+                    }
+                }
+
+                for (let i = allPairs.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [allPairs[i], allPairs[j]] = [allPairs[j], allPairs[i]];
+                }
+
+                // 同じ試合枠（複数コート）に同じチームが重複しないよう優先配置
+                let orderedPairs = [];
+                let remaining = [...allPairs];
+                while (remaining.length > 0) {
+                    let slotTeams = new Set();
+                    let slotCount = 0;
+                    for (let k = 0; k < remaining.length && slotCount < state.courtCount; ) {
+                        let p = remaining[k];
+                        if (!slotTeams.has(p.t1) && !slotTeams.has(p.t2)) {
+                            orderedPairs.push(p);
+                            slotTeams.add(p.t1);
+                            slotTeams.add(p.t2);
+                            remaining.splice(k, 1);
+                            slotCount++;
+                        } else {
+                            k++;
+                        }
+                    }
+                    while (slotCount < state.courtCount && remaining.length > 0) {
+                        orderedPairs.push(remaining.shift());
+                        slotCount++;
+                    }
+                }
+
+                state.customPairs = orderedPairs;
+                state.scores = {};
                 if (state.isAdmin) saveToFirestore();
             });
 
@@ -408,21 +464,27 @@
         }
 
         function generateSchedule(n, courtCount) {
-            let teams = Array.from({length: n}, (_, i) => i);
-            if (n % 2 !== 0) teams.push(-1);
-
-            let numTeams = teams.length;
-            let roundsCount = numTeams - 1;
             let rawPairs = [];
-            let tempTeams = [...teams];
+            const expectedPairsCount = (n * (n - 1)) / 2;
 
-            for (let r = 0; r < roundsCount; r++) {
-                for (let i = 0; i < numTeams / 2; i++) {
-                    let t1 = tempTeams[i];
-                    let t2 = tempTeams[numTeams - 1 - i];
-                    if (t1 !== -1 && t2 !== -1) rawPairs.push({ t1, t2 });
+            if (state.customPairs && Array.isArray(state.customPairs) && state.customPairs.length === expectedPairsCount) {
+                rawPairs = state.customPairs;
+            } else {
+                let teams = Array.from({length: n}, (_, i) => i);
+                if (n % 2 !== 0) teams.push(-1);
+
+                let numTeams = teams.length;
+                let roundsCount = numTeams - 1;
+                let tempTeams = [...teams];
+
+                for (let r = 0; r < roundsCount; r++) {
+                    for (let i = 0; i < numTeams / 2; i++) {
+                        let t1 = tempTeams[i];
+                        let t2 = tempTeams[numTeams - 1 - i];
+                        if (t1 !== -1 && t2 !== -1) rawPairs.push({ t1, t2 });
+                    }
+                    tempTeams.splice(1, 0, tempTeams.pop());
                 }
-                tempTeams.splice(1, 0, tempTeams.pop());
             }
 
             let matches = [];
